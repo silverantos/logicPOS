@@ -3,6 +3,7 @@ using System;
 using LogicPOS.ApiServer.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LogicPOS.ApiServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917103623_AddCountriesAndCurrencies")]
+    partial class AddCountriesAndCurrencies
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.9");
@@ -1895,81 +1898,6 @@ namespace LogicPOS.ApiServer.Data.Migrations
                     b.ToTable("ApiWarehouseLocations");
                 });
 
-            modelBuilder.Entity("LogicPOS.ApiServer.Data.Entities.ApiWorkSessionMovement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("WorkSessionPeriodId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkSessionPeriodId");
-
-                    b.ToTable("ApiWorkSessionMovements");
-                });
-
-            modelBuilder.Entity("LogicPOS.ApiServer.Data.Entities.ApiWorkSessionPeriod", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Designation")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("EndDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ParentId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("TerminalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UpdatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ApiWorkSessionPeriods");
-                });
-
             modelBuilder.Entity("LogicPOS.ApiServer.Data.Entities.ApiArticle", b =>
                 {
                     b.HasOne("LogicPOS.ApiServer.Data.Entities.ApiArticleClass", null)
@@ -2173,15 +2101,6 @@ namespace LogicPOS.ApiServer.Data.Migrations
                         .WithMany()
                         .HasForeignKey("WarehouseId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("LogicPOS.ApiServer.Data.Entities.ApiWorkSessionMovement", b =>
-                {
-                    b.HasOne("LogicPOS.ApiServer.Data.Entities.ApiWorkSessionPeriod", null)
-                        .WithMany()
-                        .HasForeignKey("WorkSessionPeriodId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

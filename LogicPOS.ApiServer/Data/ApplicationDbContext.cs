@@ -35,6 +35,10 @@ public sealed class ApplicationDbContext : DbContext
     public DbSet<ApiOrderTicket> ApiOrderTickets => Set<ApiOrderTicket>();
     public DbSet<ApiOrderDetail> ApiOrderDetails => Set<ApiOrderDetail>();
     public DbSet<ApiArticleChild> ApiArticleChildren => Set<ApiArticleChild>();
+    public DbSet<ApiCountry> ApiCountries => Set<ApiCountry>();
+    public DbSet<ApiCurrency> ApiCurrencies => Set<ApiCurrency>();
+    public DbSet<ApiWorkSessionPeriod> ApiWorkSessionPeriods => Set<ApiWorkSessionPeriod>();
+    public DbSet<ApiWorkSessionMovement> ApiWorkSessionMovements => Set<ApiWorkSessionMovement>();
     public DbSet<ApiPaymentMethod> ApiPaymentMethods => Set<ApiPaymentMethod>();
     public DbSet<ApiFiscalYear> ApiFiscalYears => Set<ApiFiscalYear>();
     public DbSet<ApiDocumentType> ApiDocumentTypes => Set<ApiDocumentType>();
@@ -388,6 +392,47 @@ public sealed class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(item => item.ChildArticleId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ApiCountry>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Code).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Designation).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(1024).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiCurrency>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Code).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Designation).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.Symbol).HasMaxLength(8).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(1024).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiWorkSessionPeriod>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Designation).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(1024).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiWorkSessionMovement>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Notes).HasMaxLength(1024).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.HasOne<ApiWorkSessionPeriod>()
+                .WithMany()
+                .HasForeignKey(item => item.WorkSessionPeriodId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ApiPaymentMethod>(entity =>
