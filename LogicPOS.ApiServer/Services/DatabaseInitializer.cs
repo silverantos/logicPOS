@@ -53,7 +53,11 @@ public sealed class DatabaseInitializer
         }
 
         var connection = _dbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
+        var shouldCloseConnection = connection.State != System.Data.ConnectionState.Open;
+        if (shouldCloseConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
 
         try
         {
@@ -95,7 +99,10 @@ public sealed class DatabaseInitializer
         }
         finally
         {
-            await connection.CloseAsync();
+            if (shouldCloseConnection)
+            {
+                await connection.CloseAsync();
+            }
         }
     }
 
@@ -184,7 +191,11 @@ VALUES ($migrationId, $productVersion);";
             .ToArray();
 
         var connection = _dbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
+        var shouldCloseConnection = connection.State != System.Data.ConnectionState.Open;
+        if (shouldCloseConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
 
         try
         {
@@ -207,7 +218,10 @@ VALUES ($migrationId, $productVersion);";
         }
         finally
         {
-            await connection.CloseAsync();
+            if (shouldCloseConnection)
+            {
+                await connection.CloseAsync();
+            }
         }
     }
 

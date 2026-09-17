@@ -30,14 +30,14 @@ public sealed class BootstrapUserSeeder
         }
 
         var normalizedUsername = _bootstrapUserSettings.Username.Trim();
-        var existingUser = await _dbContext.ApiUsers
-            .Where(user => user.Id == _bootstrapUserSettings.UserId ||
-                           EF.Functions.Collate(user.Username, "NOCASE") == normalizedUsername)
-            .ToListAsync(cancellationToken);
+        var targetUser = await _dbContext.ApiUsers
+            .FirstOrDefaultAsync(user => user.Id == _bootstrapUserSettings.UserId, cancellationToken);
 
-        var targetUser = existingUser
-            .OrderByDescending(user => user.Id == _bootstrapUserSettings.UserId)
-            .FirstOrDefault();
+        if (targetUser is null)
+        {
+            targetUser = (await _dbContext.ApiUsers.ToListAsync(cancellationToken))
+                .FirstOrDefault(user => string.Equals(user.Username, normalizedUsername, StringComparison.OrdinalIgnoreCase));
+        }
 
         var (hash, salt) = _pinHasher.Hash(_bootstrapUserSettings.Pin);
 
