@@ -112,7 +112,7 @@ public static class DatabaseSettingsResolver
         var module = string.IsNullOrWhiteSpace(configuredModule)
             ? "default"
             : configuredModule.Trim().ToLowerInvariant();
-        var useSeed = settings.UseSeed || string.IsNullOrWhiteSpace(configuredModule) == false;
+        var useSeed = settings.UseSeed;
 
         var resolved = new ResolvedDatabaseSettings(
             DatabaseType: "Sqlite",

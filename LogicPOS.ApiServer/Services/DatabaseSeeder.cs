@@ -116,6 +116,9 @@ public sealed class DatabaseSeeder
 
         var existingUsers = await _dbContext.ApiUsers
             .ToDictionaryAsync(user => user.Id, cancellationToken);
+        var existingUsersByUsername = existingUsers.Values
+            .Where(user => string.IsNullOrWhiteSpace(user.Username) == false)
+            .ToDictionary(user => user.Username, StringComparer.OrdinalIgnoreCase);
 
         var insertedUsers = 0;
         var updatedUsers = 0;
@@ -133,6 +136,15 @@ public sealed class DatabaseSeeder
 
             if (existingUsers.TryGetValue(legacyUser.Id, out var existingUser))
             {
+                if (!string.Equals(existingUser.Username, username, StringComparison.OrdinalIgnoreCase) &&
+                    existingUsersByUsername.TryGetValue(username, out var conflictingUser) &&
+                    conflictingUser.Id != existingUser.Id)
+                {
+                    throw new InvalidOperationException(
+                        $"Seed user '{legacyUser.Id}' attempted to use username '{username}', but it already belongs to '{conflictingUser.Id}'.");
+                }
+
+                var previousUsername = existingUser.Username;
                 existingUser.Username = username;
 
                 if (existingUser.CreatedUtc == default)
@@ -142,7 +154,7 @@ public sealed class DatabaseSeeder
 
                 if (string.IsNullOrWhiteSpace(existingUser.PinHash) || string.IsNullOrWhiteSpace(existingUser.PinSalt))
                 {
-                    var (seedHash, seedSalt, seedTerminalId) = CreateCredentials(legacyUser, username);
+                    var (seedHash, seedSalt, seedTerminalId) = CreateCredentials(username);
                     existingUser.PinHash = seedHash;
                     existingUser.PinSalt = seedSalt;
                     existingUser.TerminalId = existingUser.TerminalId == Guid.Empty
@@ -151,10 +163,37 @@ public sealed class DatabaseSeeder
                 }
 
                 updatedUsers++;
+                if (string.IsNullOrWhiteSpace(previousUsername) == false)
+                {
+                    existingUsersByUsername.Remove(previousUsername);
+                }
+
+                existingUsersByUsername[username] = existingUser;
                 continue;
             }
 
-            var (hash, salt, terminalId) = CreateCredentials(legacyUser, username);
+            if (existingUsersByUsername.TryGetValue(username, out var existingUserByUsername))
+            {
+                if (existingUserByUsername.CreatedUtc == default)
+                {
+                    existingUserByUsername.CreatedUtc = NormalizeDate(legacyUser.CreatedAt);
+                }
+
+                if (string.IsNullOrWhiteSpace(existingUserByUsername.PinHash) || string.IsNullOrWhiteSpace(existingUserByUsername.PinSalt))
+                {
+                    var (seedHash, seedSalt, seedTerminalId) = CreateCredentials(username);
+                    existingUserByUsername.PinHash = seedHash;
+                    existingUserByUsername.PinSalt = seedSalt;
+                    existingUserByUsername.TerminalId = existingUserByUsername.TerminalId == Guid.Empty
+                        ? seedTerminalId
+                        : existingUserByUsername.TerminalId;
+                }
+
+                updatedUsers++;
+                continue;
+            }
+
+            var (hash, salt, terminalId) = CreateCredentials(username);
 
             _dbContext.ApiUsers.Add(new ApiUser
             {
@@ -170,6 +209,11 @@ public sealed class DatabaseSeeder
             {
                 Id = legacyUser.Id
             });
+            existingUsersByUsername[username] = new ApiUser
+            {
+                Id = legacyUser.Id,
+                Username = username
+            };
             insertedUsers++;
         }
 
@@ -186,7 +230,7 @@ public sealed class DatabaseSeeder
             updatedUsers);
     }
 
-    private (string Hash, string Salt, Guid TerminalId) CreateCredentials(LegacySeedUser legacyUser, string username)
+    private (string Hash, string Salt, Guid TerminalId) CreateCredentials(string username)
     {
         if (_bootstrapUserSettings.IsConfigured &&
             string.Equals(username, _bootstrapUserSettings.Username, StringComparison.OrdinalIgnoreCase))
@@ -195,9 +239,7 @@ public sealed class DatabaseSeeder
             return (bootstrapCredentials.Hash, bootstrapCredentials.Salt, _bootstrapUserSettings.TerminalId);
         }
 
-        var seedPinMaterial = string.IsNullOrWhiteSpace(legacyUser.AccessPin)
-            ? legacyUser.Id.ToString("N")
-            : legacyUser.AccessPin.Trim();
+        var seedPinMaterial = Guid.NewGuid().ToString("N");
         var seedOnlyCredentials = _pinHasher.Hash(seedPinMaterial);
         return (seedOnlyCredentials.Hash, seedOnlyCredentials.Salt, Guid.Empty);
     }
@@ -282,7 +324,6 @@ public sealed class DatabaseSeeder
         public Guid ProfileId { get; set; }
         public string? Name { get; set; }
         public string? Login { get; set; }
-        public string? AccessPin { get; set; }
         public bool IsDeleted { get; set; }
         public DateTime CreatedAt { get; set; }
     }
