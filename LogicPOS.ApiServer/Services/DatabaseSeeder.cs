@@ -2,7 +2,6 @@ using System.Text.Json;
 using LogicPOS.ApiServer.Authentication;
 using LogicPOS.ApiServer.Data;
 using LogicPOS.ApiServer.Data.Entities;
-using LogicPOS.ApiServer.DTOs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -10,6 +9,50 @@ namespace LogicPOS.ApiServer.Services;
 
 public sealed class DatabaseSeeder
 {
+    private static readonly string[] CommonSeedFiles =
+    [
+        "articleclasses.json",
+        "countries.json",
+        "currencies.json",
+        "discountgroups.json",
+        "inputreaders.json",
+        "measurementunits.json",
+        "movementtypes.json",
+        "paymentconditions.json",
+        "paymentmethods.json",
+        "permissiongroups.json",
+        "permissionitems.json",
+        "permissionprofiles.json",
+        "poledisplays.json",
+        "printers.json",
+        "printertypes.json",
+        "sizeunits.json",
+        "systemaudittypes.json",
+        "systemnotificationtypes.json",
+        "warehouselocations.json",
+        "warehouses.json",
+        "weighingmachines.json",
+        "pt/customers.json",
+        "pt/documenttypes.json",
+        "pt/holidays.json",
+        "pt/preferenceparameters.json",
+        "pt/vatexemptionreasons.json",
+        "pt/vatrates.json"
+    ];
+
+    private static readonly string[] ModuleSeedFiles =
+    [
+        "articlefamilies.json",
+        "articles.json",
+        "articlesubfamilies.json",
+        "articletypes.json",
+        "commissiongroups.json",
+        "customertypes.json",
+        "places.json",
+        "pricetypes.json",
+        "tables.json"
+    ];
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -42,36 +85,40 @@ public sealed class DatabaseSeeder
             return;
         }
 
-        var countries = await LoadRequiredAsync<CountryResponse>(
-            _databaseSettings.GetSeedFile("countries.json"),
-            "shared countries",
-            cancellationToken);
+        var commonSeedRows = 0;
+        foreach (var commonSeedFile in CommonSeedFiles)
+        {
+            commonSeedRows += await LoadRequiredCountAsync(
+                _databaseSettings.GetSeedFile(commonSeedFile),
+                $"shared seed '{commonSeedFile}'",
+                cancellationToken);
+        }
 
-        var currencies = await LoadRequiredAsync<CurrencyResponse>(
-            _databaseSettings.GetSeedFile("currencies.json"),
-            "shared currencies",
-            cancellationToken);
+        var moduleSeedRows = 0;
+        foreach (var moduleSeedFile in ModuleSeedFiles)
+        {
+            moduleSeedRows += await LoadRequiredCountAsync(
+                _databaseSettings.GetSeedFile("modules", _databaseSettings.Module, moduleSeedFile),
+                $"module '{_databaseSettings.Module}' seed '{moduleSeedFile}'",
+                cancellationToken);
+        }
 
+        var legacyProfiles = await LoadRequiredAsync<LegacySeedUserProfile>(
+            _databaseSettings.GetSeedFile("modules", _databaseSettings.Module, "userprofiles.json"),
+            $"module '{_databaseSettings.Module}' user profiles",
+            cancellationToken);
         var legacyUsers = await LoadRequiredAsync<LegacySeedUser>(
             _databaseSettings.GetSeedFile("modules", _databaseSettings.Module, "users.json"),
             $"module '{_databaseSettings.Module}' users",
             cancellationToken);
 
+        ValidateUserProfileReferences(legacyUsers, legacyProfiles, _databaseSettings.Module);
+
         var existingUsers = await _dbContext.ApiUsers
-            .AsNoTracking()
-            .Select(user => new { user.Id, user.Username })
-            .ToListAsync(cancellationToken);
-
-        var existingUserIds = existingUsers
-            .Select(user => user.Id)
-            .ToHashSet();
-
-        var existingUsernames = existingUsers
-            .Select(user => user.Username)
-            .Where(username => string.IsNullOrWhiteSpace(username) == false)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToDictionaryAsync(user => user.Id, cancellationToken);
 
         var insertedUsers = 0;
+        var updatedUsers = 0;
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -84,12 +131,30 @@ public sealed class DatabaseSeeder
                     $"Seed user '{legacyUser.Id}' in module '{_databaseSettings.Module}' does not define a usable Login or Name.");
             }
 
-            if (existingUserIds.Contains(legacyUser.Id) || existingUsernames.Contains(username))
+            if (existingUsers.TryGetValue(legacyUser.Id, out var existingUser))
             {
+                existingUser.Username = username;
+
+                if (existingUser.CreatedUtc == default)
+                {
+                    existingUser.CreatedUtc = NormalizeDate(legacyUser.CreatedAt);
+                }
+
+                if (string.IsNullOrWhiteSpace(existingUser.PinHash) || string.IsNullOrWhiteSpace(existingUser.PinSalt))
+                {
+                    var (seedHash, seedSalt, seedTerminalId) = CreateCredentials(legacyUser, username);
+                    existingUser.PinHash = seedHash;
+                    existingUser.PinSalt = seedSalt;
+                    existingUser.TerminalId = existingUser.TerminalId == Guid.Empty
+                        ? seedTerminalId
+                        : existingUser.TerminalId;
+                }
+
+                updatedUsers++;
                 continue;
             }
 
-            var (hash, salt, terminalId) = CreateCredentials(username);
+            var (hash, salt, terminalId) = CreateCredentials(legacyUser, username);
 
             _dbContext.ApiUsers.Add(new ApiUser
             {
@@ -98,15 +163,13 @@ public sealed class DatabaseSeeder
                 Username = username,
                 PinHash = hash,
                 PinSalt = salt,
-                CreatedUtc = legacyUser.CreatedAt == default
-                    ? DateTime.UtcNow
-                    : legacyUser.CreatedAt.Kind == DateTimeKind.Unspecified
-                        ? DateTime.SpecifyKind(legacyUser.CreatedAt, DateTimeKind.Utc)
-                        : legacyUser.CreatedAt.ToUniversalTime()
+                CreatedUtc = NormalizeDate(legacyUser.CreatedAt)
             });
 
-            existingUserIds.Add(legacyUser.Id);
-            existingUsernames.Add(username);
+            existingUsers.Add(legacyUser.Id, new ApiUser
+            {
+                Id = legacyUser.Id
+            });
             insertedUsers++;
         }
 
@@ -114,15 +177,16 @@ public sealed class DatabaseSeeder
         await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Processed legacy seed data from {SeedPath} for module {Module}. Loaded {CountryCount} countries, {CurrencyCount} currencies, inserted {InsertedUserCount} API users.",
+            "Processed seed data from {SeedPath} for module {Module}. Validated {CommonRows} shared rows and {ModuleRows} module rows. Inserted {InsertedUserCount} API users and refreshed {UpdatedUserCount} existing users.",
             _databaseSettings.SeedPath,
             _databaseSettings.Module,
-            countries.Count,
-            currencies.Count,
-            insertedUsers);
+            commonSeedRows,
+            moduleSeedRows + legacyProfiles.Count + legacyUsers.Count,
+            insertedUsers,
+            updatedUsers);
     }
 
-    private (string Hash, string Salt, Guid TerminalId) CreateCredentials(string username)
+    private (string Hash, string Salt, Guid TerminalId) CreateCredentials(LegacySeedUser legacyUser, string username)
     {
         if (_bootstrapUserSettings.IsConfigured &&
             string.Equals(username, _bootstrapUserSettings.Username, StringComparison.OrdinalIgnoreCase))
@@ -131,7 +195,10 @@ public sealed class DatabaseSeeder
             return (bootstrapCredentials.Hash, bootstrapCredentials.Salt, _bootstrapUserSettings.TerminalId);
         }
 
-        var seedOnlyCredentials = _pinHasher.Hash(Guid.NewGuid().ToString("N"));
+        var seedPinMaterial = string.IsNullOrWhiteSpace(legacyUser.AccessPin)
+            ? legacyUser.Id.ToString("N")
+            : legacyUser.AccessPin.Trim();
+        var seedOnlyCredentials = _pinHasher.Hash(seedPinMaterial);
         return (seedOnlyCredentials.Hash, seedOnlyCredentials.Salt, Guid.Empty);
     }
 
@@ -143,6 +210,49 @@ public sealed class DatabaseSeeder
         }
 
         return legacyUser.Name?.Trim() ?? string.Empty;
+    }
+
+    private static DateTime NormalizeDate(DateTime value)
+    {
+        if (value == default)
+        {
+            return DateTime.UtcNow;
+        }
+
+        return value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            : value.ToUniversalTime();
+    }
+
+    private static void ValidateUserProfileReferences(
+        IReadOnlyList<LegacySeedUser> users,
+        IReadOnlyList<LegacySeedUserProfile> profiles,
+        string module)
+    {
+        var profileIds = profiles
+            .Where(profile => profile.IsDeleted == false && profile.Id != Guid.Empty)
+            .Select(profile => profile.Id)
+            .ToHashSet();
+
+        if (profileIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var user in users.Where(item => item.IsDeleted == false && item.Id != Guid.Empty && item.ProfileId != Guid.Empty))
+        {
+            if (!profileIds.Contains(user.ProfileId))
+            {
+                throw new InvalidOperationException(
+                    $"Seed user '{user.Id}' references missing profile '{user.ProfileId}' in module '{module}'.");
+            }
+        }
+    }
+
+    private static async Task<int> LoadRequiredCountAsync(string path, string description, CancellationToken cancellationToken)
+    {
+        var elements = await LoadRequiredAsync<JsonElement>(path, description, cancellationToken);
+        return elements.Count;
     }
 
     private static async Task<IReadOnlyList<T>> LoadRequiredAsync<T>(string path, string description, CancellationToken cancellationToken)
@@ -169,9 +279,17 @@ public sealed class DatabaseSeeder
     private sealed class LegacySeedUser
     {
         public Guid Id { get; set; }
+        public Guid ProfileId { get; set; }
         public string? Name { get; set; }
         public string? Login { get; set; }
+        public string? AccessPin { get; set; }
         public bool IsDeleted { get; set; }
         public DateTime CreatedAt { get; set; }
+    }
+
+    private sealed class LegacySeedUserProfile
+    {
+        public Guid Id { get; set; }
+        public bool IsDeleted { get; set; }
     }
 }

@@ -10,7 +10,7 @@ public sealed class DatabaseSettings
     public string ConnectionString { get; set; } = string.Empty;
     public bool UseMigrations { get; set; } = true;
     public string SeedPath { get; set; } = string.Empty;
-    public bool UseSeed { get; set; }
+    public bool UseSeed { get; set; } = true;
     public string Module { get; set; } = string.Empty;
 }
 
@@ -34,9 +34,56 @@ public sealed record ResolvedDatabaseSettings(
 
 public static class DatabaseSettingsResolver
 {
+    private static readonly string[] SharedSeedFiles =
+    [
+        "articleclasses.json",
+        "countries.json",
+        "currencies.json",
+        "discountgroups.json",
+        "inputreaders.json",
+        "measurementunits.json",
+        "movementtypes.json",
+        "paymentconditions.json",
+        "paymentmethods.json",
+        "permissiongroups.json",
+        "permissionitems.json",
+        "permissionprofiles.json",
+        "poledisplays.json",
+        "printers.json",
+        "printertypes.json",
+        "sizeunits.json",
+        "systemaudittypes.json",
+        "systemnotificationtypes.json",
+        "warehouselocations.json",
+        "warehouses.json",
+        "weighingmachines.json",
+        "pt/customers.json",
+        "pt/documenttypes.json",
+        "pt/holidays.json",
+        "pt/preferenceparameters.json",
+        "pt/vatexemptionreasons.json",
+        "pt/vatrates.json"
+    ];
+
+    private static readonly string[] ModuleSeedFiles =
+    [
+        "articlefamilies.json",
+        "articles.json",
+        "articlesubfamilies.json",
+        "articletypes.json",
+        "commissiongroups.json",
+        "customertypes.json",
+        "places.json",
+        "pricetypes.json",
+        "tables.json",
+        "userprofiles.json",
+        "users.json"
+    ];
+
     public static ResolvedDatabaseSettings Resolve(IConfiguration configuration, string contentRootPath)
     {
         var settings = configuration.GetSection(DatabaseSettings.SectionName).Get<DatabaseSettings>() ?? new DatabaseSettings();
+        var systemModule = configuration["SystemInformation:Module"];
 
         var databaseType = string.IsNullOrWhiteSpace(settings.DatabaseType)
             ? "Sqlite"
@@ -59,19 +106,23 @@ public static class DatabaseSettingsResolver
         }
 
         var seedPath = ResolveSeedPath(settings.SeedPath, contentRootPath);
-        var module = string.IsNullOrWhiteSpace(settings.Module)
+        var configuredModule = string.IsNullOrWhiteSpace(settings.Module) == false
+            ? settings.Module
+            : systemModule;
+        var module = string.IsNullOrWhiteSpace(configuredModule)
             ? "default"
-            : settings.Module.Trim().ToLowerInvariant();
+            : configuredModule.Trim().ToLowerInvariant();
+        var useSeed = settings.UseSeed || string.IsNullOrWhiteSpace(configuredModule) == false;
 
         var resolved = new ResolvedDatabaseSettings(
             DatabaseType: "Sqlite",
             ConnectionString: connectionString,
             UseMigrations: settings.UseMigrations,
             SeedPath: seedPath,
-            UseSeed: settings.UseSeed,
+            UseSeed: useSeed,
             Module: module,
-            RequireSeedFiles: settings.UseSeed ||
-                              string.IsNullOrWhiteSpace(settings.Module) == false ||
+            RequireSeedFiles: useSeed ||
+                              string.IsNullOrWhiteSpace(configuredModule) == false ||
                               string.IsNullOrWhiteSpace(settings.SeedPath) == false);
 
         if (resolved.RequireSeedFiles)
@@ -79,7 +130,7 @@ public static class DatabaseSettingsResolver
             EnsureDirectoryExists(resolved.SeedPath, "seed root");
         }
 
-        var shouldValidateModule = resolved.UseSeed || string.IsNullOrWhiteSpace(settings.Module) == false;
+        var shouldValidateModule = resolved.UseSeed || string.IsNullOrWhiteSpace(configuredModule) == false;
         if (shouldValidateModule)
         {
             var modulesPath = resolved.GetSeedFile("modules");
@@ -100,9 +151,15 @@ public static class DatabaseSettingsResolver
 
         if (resolved.UseSeed)
         {
-            EnsureFileExists(resolved.GetSeedFile("countries.json"));
-            EnsureFileExists(resolved.GetSeedFile("currencies.json"));
-            EnsureFileExists(resolved.GetSeedFile("modules", resolved.Module, "users.json"));
+            foreach (var sharedSeedFile in SharedSeedFiles)
+            {
+                EnsureFileExists(resolved.GetSeedFile(sharedSeedFile));
+            }
+
+            foreach (var moduleSeedFile in ModuleSeedFiles)
+            {
+                EnsureFileExists(resolved.GetSeedFile("modules", resolved.Module, moduleSeedFile));
+            }
         }
 
         return resolved;
