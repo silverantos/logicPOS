@@ -126,7 +126,7 @@ public sealed class ReferenceDataService
 
         if (!File.Exists(countriesPath) || !File.Exists(currenciesPath))
         {
-            if (databaseSettings.UseSeed)
+            if (databaseSettings.RequireSeedFiles)
             {
                 throw new InvalidOperationException(
                    $"Reference seed files were expected under '{databaseSettings.SeedPath}' but countries.json and/or currencies.json were missing.");
@@ -155,7 +155,7 @@ public sealed class ReferenceDataService
         }
         catch (Exception exception) when (exception is IOException or JsonException or NotSupportedException)
         {
-            if (databaseSettings.UseSeed)
+            if (databaseSettings.RequireSeedFiles)
             {
                 throw new InvalidOperationException(
                    $"Failed to load reference data from '{databaseSettings.SeedPath}'.",

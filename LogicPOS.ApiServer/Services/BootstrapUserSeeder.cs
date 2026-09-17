@@ -30,9 +30,9 @@ public sealed class BootstrapUserSeeder
         }
 
         var normalizedUsername = _bootstrapUserSettings.Username.Trim();
-        var normalizedUsernameLower = normalizedUsername.ToLowerInvariant();
         var existingUser = await _dbContext.ApiUsers
-            .Where(user => user.Id == _bootstrapUserSettings.UserId || user.Username.ToLower() == normalizedUsernameLower)
+            .Where(user => user.Id == _bootstrapUserSettings.UserId ||
+                           EF.Functions.Collate(user.Username, "NOCASE") == normalizedUsername)
             .ToListAsync(cancellationToken);
 
         var targetUser = existingUser

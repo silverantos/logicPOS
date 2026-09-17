@@ -20,7 +20,8 @@ public sealed record ResolvedDatabaseSettings(
     bool UseMigrations,
     string SeedPath,
     bool UseSeed,
-    string Module)
+    string Module,
+    bool RequireSeedFiles)
 {
     public string GetSeedFile(params string[] relativeSegments)
     {
@@ -68,13 +69,20 @@ public static class DatabaseSettingsResolver
             UseMigrations: settings.UseMigrations,
             SeedPath: seedPath,
             UseSeed: settings.UseSeed,
-            Module: module);
+            Module: module,
+            RequireSeedFiles: settings.UseSeed ||
+                              string.IsNullOrWhiteSpace(settings.Module) == false ||
+                              string.IsNullOrWhiteSpace(settings.SeedPath) == false);
+
+        if (resolved.RequireSeedFiles)
+        {
+            EnsureDirectoryExists(resolved.SeedPath, "seed root");
+        }
 
         var shouldValidateModule = resolved.UseSeed || string.IsNullOrWhiteSpace(settings.Module) == false;
         if (shouldValidateModule)
         {
             var modulesPath = resolved.GetSeedFile("modules");
-            EnsureDirectoryExists(resolved.SeedPath, "seed root");
             EnsureDirectoryExists(modulesPath, "modules");
 
             var modulePath = resolved.GetSeedFile("modules", resolved.Module);
