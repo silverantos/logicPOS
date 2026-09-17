@@ -11,11 +11,16 @@ public sealed class LicensingService
     private const int SingletonLicenseId = 1;
     private readonly ApplicationDbContext _dbContext;
     private readonly SystemVersionService _systemVersionService;
+    private readonly ReferenceDataService _referenceDataService;
 
-    public LicensingService(ApplicationDbContext dbContext, SystemVersionService systemVersionService)
+    public LicensingService(
+        ApplicationDbContext dbContext,
+        SystemVersionService systemVersionService,
+        ReferenceDataService referenceDataService)
     {
         _dbContext = dbContext;
         _systemVersionService = systemVersionService;
+        _referenceDataService = referenceDataService;
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -56,7 +61,10 @@ public sealed class LicensingService
 
     public IReadOnlyList<string> GetCountries()
     {
-        return new[] { "Portugal", "Angola" };
+        return _referenceDataService.GetCountries()
+            .OrderBy(country => country.Designation)
+            .Select(country => country.Designation)
+            .ToArray();
     }
 
     public async Task<ActivateLicenseResponseDto> ActivateAsync(ActivateLicenseRequest request, CancellationToken cancellationToken = default)

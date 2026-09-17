@@ -1,3 +1,5 @@
+using System.Text.Json;
+using LogicPOS.ApiServer.Data;
 using LogicPOS.ApiServer.DTOs;
 
 namespace LogicPOS.ApiServer.Services;
@@ -6,8 +8,12 @@ public sealed class ReferenceDataService
 {
     private static readonly Guid SystemUserId = Guid.Empty;
     private static readonly DateTime CatalogTimestamp = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
-    private static readonly IReadOnlyList<CurrencyResponse> Currencies =
+    private static readonly IReadOnlyList<CurrencyResponse> FallbackCurrencies =
     [
         new CurrencyResponse
         {
@@ -39,7 +45,7 @@ public sealed class ReferenceDataService
         }
     ];
 
-    private static readonly IReadOnlyList<CountryResponse> Countries =
+    private static readonly IReadOnlyList<CountryResponse> FallbackCountries =
     [
         new CountryResponse
         {
@@ -79,14 +85,24 @@ public sealed class ReferenceDataService
         }
     ];
 
+    private readonly IReadOnlyList<CountryResponse> _countries;
+    private readonly IReadOnlyList<CurrencyResponse> _currencies;
+
+    public ReferenceDataService(
+        ResolvedDatabaseSettings databaseSettings,
+        ILogger<ReferenceDataService> logger)
+    {
+        (_countries, _currencies) = LoadReferenceData(databaseSettings, logger);
+    }
+
     public IReadOnlyList<CountryResponse> GetCountries()
     {
-        return Countries;
+        return _countries;
     }
 
     public IReadOnlyList<CurrencyResponse> GetCurrencies()
     {
-        return Currencies;
+        return _currencies;
     }
 
     public CurrencyResponse? GetCurrencyByCode(string? code)
@@ -96,8 +112,62 @@ public sealed class ReferenceDataService
             return null;
         }
 
-        return Currencies.FirstOrDefault(currency =>
+        return _currencies.FirstOrDefault(currency =>
                    string.Equals(currency.Code, code, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(currency.Acronym, code, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static (IReadOnlyList<CountryResponse> Countries, IReadOnlyList<CurrencyResponse> Currencies) LoadReferenceData(
+        ResolvedDatabaseSettings databaseSettings,
+        ILogger<ReferenceDataService> logger)
+    {
+        var countriesPath = databaseSettings.GetSeedFile("countries.json");
+        var currenciesPath = databaseSettings.GetSeedFile("currencies.json");
+
+        if (!File.Exists(countriesPath) || !File.Exists(currenciesPath))
+        {
+            if (databaseSettings.UseSeed)
+            {
+                throw new InvalidOperationException(
+                   $"Reference seed files were expected under '{databaseSettings.SeedPath}' but countries.json and/or currencies.json were missing.");
+            }
+
+            return (FallbackCountries, FallbackCurrencies);
+        }
+
+        try
+        {
+            var countries = JsonSerializer.Deserialize<List<CountryResponse>>(File.ReadAllText(countriesPath), SerializerOptions);
+            var currencies = JsonSerializer.Deserialize<List<CurrencyResponse>>(File.ReadAllText(currenciesPath), SerializerOptions);
+
+            if (countries is null || currencies is null)
+            {
+                throw new InvalidOperationException("The reference seed files did not contain valid JSON arrays.");
+            }
+
+            logger.LogInformation(
+                "Loaded {CountryCount} countries and {CurrencyCount} currencies from {SeedPath}.",
+                countries.Count,
+                currencies.Count,
+                databaseSettings.SeedPath);
+
+            return (countries, currencies);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or NotSupportedException)
+        {
+            if (databaseSettings.UseSeed)
+            {
+                throw new InvalidOperationException(
+                   $"Failed to load reference data from '{databaseSettings.SeedPath}'.",
+                   exception);
+            }
+
+            logger.LogWarning(
+                exception,
+                "Falling back to in-memory reference data because the deployed seed files under {SeedPath} could not be read.",
+                databaseSettings.SeedPath);
+
+            return (FallbackCountries, FallbackCurrencies);
+        }
     }
 }

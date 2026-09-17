@@ -29,22 +29,39 @@ public sealed class BootstrapUserSeeder
             return;
         }
 
+        var normalizedUsername = _bootstrapUserSettings.Username.Trim();
+        var normalizedUsernameLower = normalizedUsername.ToLowerInvariant();
         var existingUser = await _dbContext.ApiUsers
-            .AsNoTracking()
-            .SingleOrDefaultAsync(user => user.Id == _bootstrapUserSettings.UserId, cancellationToken);
+            .Where(user => user.Id == _bootstrapUserSettings.UserId || user.Username.ToLower() == normalizedUsernameLower)
+            .ToListAsync(cancellationToken);
 
-        if (existingUser is not null)
-        {
-            return;
-        }
+        var targetUser = existingUser
+            .OrderByDescending(user => user.Id == _bootstrapUserSettings.UserId)
+            .FirstOrDefault();
 
         var (hash, salt) = _pinHasher.Hash(_bootstrapUserSettings.Pin);
+
+        if (targetUser is not null)
+        {
+            targetUser.TerminalId = _bootstrapUserSettings.TerminalId;
+            targetUser.Username = normalizedUsername;
+            targetUser.PinHash = hash;
+            targetUser.PinSalt = salt;
+
+            if (targetUser.CreatedUtc == default)
+            {
+                targetUser.CreatedUtc = DateTime.UtcNow;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
 
         _dbContext.ApiUsers.Add(new ApiUser
         {
             Id = _bootstrapUserSettings.UserId,
             TerminalId = _bootstrapUserSettings.TerminalId,
-            Username = _bootstrapUserSettings.Username,
+            Username = normalizedUsername,
             PinHash = hash,
             PinSalt = salt,
             CreatedUtc = DateTime.UtcNow

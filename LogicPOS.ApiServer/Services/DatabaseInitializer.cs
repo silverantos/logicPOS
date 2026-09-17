@@ -13,16 +13,36 @@ public sealed class DatabaseInitializer
     ];
 
     private readonly ApplicationDbContext _dbContext;
+    private readonly ResolvedDatabaseSettings _databaseSettings;
+    private readonly ILogger<DatabaseInitializer> _logger;
 
-    public DatabaseInitializer(ApplicationDbContext dbContext)
+    public DatabaseInitializer(
+        ApplicationDbContext dbContext,
+        ResolvedDatabaseSettings databaseSettings,
+        ILogger<DatabaseInitializer> logger)
     {
         _dbContext = dbContext;
+        _databaseSettings = databaseSettings;
+        _logger = logger;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await BaselineEnsureCreatedDatabaseAsync(cancellationToken);
-        await _dbContext.Database.MigrateAsync(cancellationToken);
+        if (_databaseSettings.UseMigrations)
+        {
+            await BaselineEnsureCreatedDatabaseAsync(cancellationToken);
+            await _dbContext.Database.MigrateAsync(cancellationToken);
+            _logger.LogInformation("Applied EF Core migrations to the configured SQLite database.");
+        }
+        else
+        {
+            var created = await _dbContext.Database.EnsureCreatedAsync(cancellationToken);
+            _logger.LogInformation(
+                "DatabaseSettings.UseMigrations is disabled; ensured the SQLite schema exists (created={Created}).",
+                created);
+        }
+
+        await EnsureRequiredTablesAsync(cancellationToken);
     }
 
     private async Task BaselineEnsureCreatedDatabaseAsync(CancellationToken cancellationToken)
@@ -154,6 +174,41 @@ VALUES ($migrationId, $productVersion);";
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is long count && count > 0;
+    }
+
+    private async Task EnsureRequiredTablesAsync(CancellationToken cancellationToken)
+    {
+        var requiredTables = KnownBaselines
+            .SelectMany(baseline => baseline.RequiredTables)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var connection = _dbContext.Database.GetDbConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        try
+        {
+            var missingTables = new List<string>();
+            foreach (var tableName in requiredTables)
+            {
+                if (!await TableExistsAsync(connection, tableName, cancellationToken))
+                {
+                    missingTables.Add(tableName);
+                }
+            }
+
+            if (missingTables.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "The configured SQLite database does not contain the schema required by LogicPOS.ApiServer. " +
+                    $"Missing tables: {string.Join(", ", missingTables)}. " +
+                    "Enable DatabaseSettings.UseMigrations or recreate the database so the current EF Core model can be applied.");
+            }
+        }
+        finally
+        {
+            await connection.CloseAsync();
+        }
     }
 
     private sealed record MigrationBaseline(string MigrationId, string[] RequiredTables);

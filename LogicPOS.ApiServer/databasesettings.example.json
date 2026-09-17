@@ -1,0 +1,10 @@
+{
+  "DatabaseSettings": {
+    "DatabaseType": "Sqlite",
+    "ConnectionString": "Data Source=logicpos.db",
+    "UseMigrations": true,
+    "SeedPath": "db_seeds",
+    "UseSeed": false,
+    "Module": "default"
+  }
+}

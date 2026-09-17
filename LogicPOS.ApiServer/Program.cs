@@ -10,10 +10,14 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddJsonFile("databasesettings.json", optional: true, reloadOnChange: false);
+
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
     .Enrich.FromLogContext());
+
+var resolvedDatabaseSettings = DatabaseSettingsResolver.Resolve(builder.Configuration, builder.Environment.ContentRootPath);
 
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
 if (string.IsNullOrWhiteSpace(jwtSettings.SigningKey) || jwtSettings.SigningKey.Length < 32)
@@ -29,6 +33,7 @@ if (allowedOrigins.Length == 0)
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSettings.SectionName));
 builder.Services.Configure<BootstrapUserSettings>(builder.Configuration.GetSection(BootstrapUserSettings.SectionName));
+builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection(DatabaseSettings.SectionName));
 builder.Services.Configure<SystemInformationResponse>(builder.Configuration.GetSection("SystemInformation"));
 
 builder.Services.AddControllers();
@@ -44,8 +49,10 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddSingleton(resolvedDatabaseSettings);
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(resolvedDatabaseSettings.ConnectionString));
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SigningKey));
 
@@ -77,6 +84,7 @@ builder.Services.AddScoped<HealthService>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<BootstrapUserSeeder>();
 builder.Services.AddScoped<DatabaseInitializer>();
+builder.Services.AddScoped<DatabaseSeeder>();
 builder.Services.AddSingleton<ReferenceDataService>();
 builder.Services.AddSingleton<JwtTokenGenerator>();
 builder.Services.AddSingleton<PinHasher>();
@@ -87,6 +95,9 @@ using (var scope = app.Services.CreateScope())
 {
     var databaseInitializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
     await databaseInitializer.InitializeAsync();
+
+    var databaseSeeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
+    await databaseSeeder.SeedAsync();
 
     var bootstrapUserSeeder = scope.ServiceProvider.GetRequiredService<BootstrapUserSeeder>();
     await bootstrapUserSeeder.SeedAsync();
