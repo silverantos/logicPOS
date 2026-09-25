@@ -30,8 +30,8 @@ jobs:
     - name: Restore
       run: msbuild LogicPOS.sln /t:Restore /p:Configuration=Release
 
-    - name: Build UI (Release|Any CPU)
-      run: msbuild LogicPOS.UI/LogicPOS.UI.csproj /p:Configuration=Release /p:Platform="Any CPU"
+    - name: Build UI (Release|AnyCPU)
+      run: msbuild LogicPOS.UI/LogicPOS.UI.csproj /p:Configuration=Release /p:Platform=AnyCPU
 
     - name: Collect UI output
       shell: powershell
