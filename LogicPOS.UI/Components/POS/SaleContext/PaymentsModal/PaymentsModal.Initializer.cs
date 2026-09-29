@@ -159,7 +159,7 @@ namespace LogicPOS.UI.Components.POS
         {
             TxtFiscalNumber = new TextBox(this,
                                               LocalizedString.Instance["global_fiscal_number"],
-                                              isRequired: true,
+                                              isRequired: false,
                                               isValidatable: true,
                                               regex: RegularExpressions.GetFiscalNumberRegexForCountry(SystemInformationService.SystemInformation.CountryCode2),
                                               includeSelectButton: false,
