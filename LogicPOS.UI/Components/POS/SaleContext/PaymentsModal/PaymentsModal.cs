@@ -274,17 +274,10 @@ namespace LogicPOS.UI.Components.POS
             };
         }
 
-        // CORREÇÃO EM PaymentsModal.cs
-private string GetDocumentType()
-{
-    // Se o validador alterou para FR devido ao limite dos 100€, respeita a mudança
-    if (_documentType == "FR") 
-    {
-        return "FR";
-    }
-    
-    return (BtnInvoice.Sensitive == true) ? _documentType : "FT";
-}
+        private string GetDocumentType()
+        {
+            return (BtnInvoice.Sensitive == true) ? _documentType : "FT";
+        }
 
 
         private DocumentTypeAnalyzer DocTypeAnalyzer => new DocumentTypeAnalyzer(GetDocumentType());

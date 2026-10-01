@@ -35,44 +35,12 @@ namespace LogicPOS.UI.Components.POS
             return message;
         }
 
-        // CORREÇÃO EM PaymentsModal.Validation.cs (Adicionar dentro do método Validate())
-protected bool Validate()
-{
-    // Obter o país selecionado no componente TxtCountry
-    var country = TxtCountry.SelectedEntity as Api.Entities.Country;
-    string nifTexto = TxtFiscalNumber.Text?.Trim();
+        protected bool Validate()
+        {
+            UpdateFiscalNumberValidationRules();
 
-    if (country != null && country.Code2 == "PT")
-    {
-        // Se for Portugal, o NIF passa a ser obrigatório e tem de ser válido
-        if (string.IsNullOrEmpty(nifTexto))
-        {
-            CustomAlerts.Error(this)
-                .WithMessage("O Número de Contribuinte é obrigatório para clientes em Portugal.")
-                .ShowAlert();
-            return false;
-        }
-        
-        // Aqui o sistema valida o Regex do NIF português configurado na TextBox
-        if (!TxtFiscalNumber.IsValid())
-        {
-            ValidationUtilities.ShowValidationErrors(ValidatableFields, this);
-            return false;
-        }
-    }
-    else
-    {
-        // Se for Estrangeiro, o NIF pode ser vazio. 
-        // Mas se o utilizador escreveu algo, valida pelo menos se não tem caracteres inválidos
-        if (!string.IsNullOrEmpty(nifTexto) && !TxtFiscalNumber.IsValid())
-        {
-            ValidationUtilities.ShowValidationErrors(ValidatableFields, this);
-            return false;
-        }
-    }
-
-       if (AllFieldsAreValid() == false)
-    {
+            if (AllFieldsAreValid() == false)
+            {
                 ValidationUtilities.ShowValidationErrors(ValidatableFields, this);
                 return false;
             }
@@ -91,7 +59,7 @@ protected bool Validate()
                 if (CustomersService.HasSufficientCardBalance(customer, TotalFinal) == false)
                 {
                     CustomAlerts.Warning(this)
-                        .WithMessage(string.Format(LocalizedString.Instance["dialog_message_value_exceed_customer_card_credit"],customer.CardCredit.ToString("N2"),TotalFinal.ToString("N2")))
+                        .WithMessage(string.Format(LocalizedString.Instance["dialog_message_value_exceed_customer_card_credit"], customer.CardCredit.ToString("N2"), TotalFinal.ToString("N2")))
                         .ShowAlert();
                     return false;
                 }
@@ -99,34 +67,29 @@ protected bool Validate()
 
             if (SystemInformationService.SystemInformation.IsPortugal)
             {
+                bool switchToInvoiceReceipt = false;
 
-                // CORREÇÃO DA VALIDAÇÃO (Substituir a propriedade repetida pela ServicesMaxTotal)
-if (DocTypeAnalyzer.IsSimplifiedInvoice() && 
-    (TotalFinal > DocumentRules.Portugal.SimplifiedInvoiceMaxTotal || 
-     ServicesTotalFinal > DocumentRules.Portugal.SimplifiedInvoiceServicesMaxTotal)) // <-- CORRIGIDO AQUI
-{
-    string message = GetInvalidSimplifiedInvoiceMessage();
-    var response = CustomAlerts.Warning(this)
-        .WithSize(new global::System.Drawing.Size(550,440))
-        .WithButtonsType(ButtonsType.YesNo)
-        .WithMessage(message)
-        .ShowAlert();
+                if (DocTypeAnalyzer.IsSimplifiedInvoice() && ExceedsSimplifiedInvoiceLimits())
+                {
+                    string message = GetInvalidSimplifiedInvoiceMessage();
+                    var response = CustomAlerts.Warning(this)
+                        .WithSize(new global::System.Drawing.Size(550, 440))
+                        .WithButtonsType(ButtonsType.YesNo)
+                        .WithMessage(message)
+                        .ShowAlert();
 
-    if (response != ResponseType.Yes)
-    {
-        return false;
-    }
+                    if (response != ResponseType.Yes)
+                    {
+                        return false;
+                    }
 
-    // Altera o tipo interno do documento para Fatura-Recibo
-    _documentType = "FR";
-}
-
+                    switchToInvoiceReceipt = true;
+                }
 
                 if (GetDocumentCustomer().FiscalNumber == CustomersService.Default.FiscalNumber && TotalFinal > DocumentRules.Portugal.FinalConsumerMaxTotal)
                 {
-
                     string message = GetInvalidTotalForFinalConsumerMessage();
-                    var response = CustomAlerts.Warning(this)
+                    CustomAlerts.Warning(this)
                         .WithSize(new global::System.Drawing.Size(550, 480))
                         .WithMessage(message)
                         .ShowAlert();
@@ -134,9 +97,37 @@ if (DocTypeAnalyzer.IsSimplifiedInvoice() &&
                     return false;
                 }
 
+                if (switchToInvoiceReceipt)
+                {
+                    _documentType = "FR";
+                }
             }
 
             return true;
+        }
+
+        private bool ExceedsSimplifiedInvoiceLimits()
+        {
+            return TotalFinal > DocumentRules.Portugal.SimplifiedInvoiceMaxTotal ||
+                   ServicesTotalFinal > DocumentRules.Portugal.SimplifiedInvoiceServicesMaxTotal;
+        }
+
+        private static bool IsPortugueseCountry(Api.Entities.Country country)
+        {
+            return string.Equals(country?.Code2, "PT", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void UpdateFiscalNumberValidationRules()
+        {
+            var country = TxtCountry.SelectedEntity as Api.Entities.Country;
+
+            if (country != null && (SystemInformationService.SystemInformation.IsPortugal || !SystemInformationService.UseAgtFe))
+            {
+                TxtFiscalNumber.Regex = RegularExpressions.GetFiscalNumberRegexForCountry(country.Code2);
+            }
+
+            TxtFiscalNumber.IsRequired = IsPortugueseCountry(country);
+            TxtFiscalNumber.UpdateValidationColors();
         }
 
         protected bool AllFieldsAreValid()
