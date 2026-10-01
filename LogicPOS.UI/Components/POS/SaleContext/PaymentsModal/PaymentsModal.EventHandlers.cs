@@ -53,7 +53,8 @@ namespace LogicPOS.UI.Components.POS
 
         private void BtnOk_Clicked(object sender, EventArgs e)
         {
-            if (Validate() == false)
+            IsValid = Validate();
+            if (IsValid == false)
             {
                 Run();
                 return;
@@ -68,8 +69,6 @@ namespace LogicPOS.UI.Components.POS
                 return;
             }
 
-
-            IsValid = Validate();
             var addDocumentCommand = CreateAddDocumentCommand();
             if (addDocumentCommand == null)
             {
@@ -357,6 +356,7 @@ namespace LogicPOS.UI.Components.POS
             {
                 TxtCountry.Text = page.SelectedEntity.Designation;
                 TxtCountry.SelectedEntity = page.SelectedEntity;
+                UpdateFiscalNumberValidationRules();
             }
         }
 
